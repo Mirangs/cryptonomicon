@@ -71,9 +71,13 @@
         <hr class="w-full border-t border-gray-600 my-4" />
         <dl class="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-3">
           <div
-            class="bg-white overflow-hidden shadow rounded-lg border-purple-800 border-solid cursor-pointer"
             v-for="t in tickers"
             :key="t.name"
+            @click="selectTicker(t)"
+            :class="{
+              'border-4': sel === t,
+            }"
+            class="bg-white overflow-hidden shadow rounded-lg border-purple-800 border-solid cursor-pointer"
           >
             <div class="px-4 py-5 sm:p-6 text-center">
               <dt class="text-sm font-medium text-gray-500 truncate">
@@ -85,7 +89,7 @@
             </div>
             <div class="w-full border-t border-gray-200"></div>
             <button
-              @click="removeTicker(t)"
+              @click.stop="removeTicker(t)"
               class="flex items-center justify-center font-medium w-full bg-gray-100 px-4 py-4 sm:px-6 text-md text-gray-500 hover:text-gray-600 hover:bg-gray-200 hover:opacity-20 transition-all focus:outline-none"
             >
               <svg
@@ -106,17 +110,23 @@
         </dl>
         <hr class="w-full border-t border-gray-600 my-4" />
       </template>
-      <section class="relative">
+      <section class="relative" v-if="sel">
         <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">
-          VUE - USD
+          {{ sel.name }} - USD
         </h3>
         <div class="flex items-end border-gray-600 border-b border-l h-64">
-          <div class="bg-purple-800 border w-10 h-24"></div>
-          <div class="bg-purple-800 border w-10 h-32"></div>
-          <div class="bg-purple-800 border w-10 h-48"></div>
-          <div class="bg-purple-800 border w-10 h-16"></div>
+          <div
+            class="bg-purple-800 border w-10"
+            v-for="(bar, index) in normalizeGraph()"
+            :key="index"
+            :style="{ height: `${bar}%` }"
+          ></div>
         </div>
-        <button type="button" class="absolute top-0 right-0">
+        <button
+          type="button"
+          class="absolute top-0 right-0"
+          @click="sel = null"
+        >
           <svg
             xmlns="http://www.w3.org/2000/svg"
             xmlns:xlink="http://www.w3.org/1999/xlink"
@@ -145,34 +155,64 @@
 </template>
 
 <script lang="ts">
-import { defineComponent } from "vue";
+import { defineComponent } from 'vue'
+import { Ticker, Tickers } from '@/types'
 
 export default defineComponent({
-  name: "App",
+  name: 'App',
   data() {
     return {
-      ticker: "",
-      tickers: [
-        { name: "DEMO", price: "-" },
-        { name: "DEMO", price: "-" },
-        { name: "DEMO", price: "-" },
-      ],
-    };
+      ticker: '',
+      tickers: [] as Tickers,
+      sel: null as Ticker | null,
+      graphData: [] as number[],
+    }
   },
   methods: {
     addTicker() {
-      const newTicker = {
+      const currentTicker: Ticker = {
         name: this.ticker,
-        price: "-",
-      };
-      this.tickers.push(newTicker);
-      this.ticker = "";
+        price: '-',
+      }
+      this.tickers.push(currentTicker)
+      this.ticker = ''
+      console.log(process.env)
+
+      setInterval(async () => {
+        console.log(process.env)
+
+        const res = await fetch(
+          `https://min-api.cryptocompare.com/data/price?fsym=${currentTicker.name}&tsyms=USD&api_key=${process.env.VUE_APP_CRYPTOCOMPARE_API_KEY}`
+        )
+        const json = (await res.json()) as { USD: number }
+        const tickerToFind = this.tickers.find(
+          (t) => t.name === currentTicker.name
+        )
+        if (tickerToFind) {
+          tickerToFind.price =
+            json.USD > 1 ? json.USD.toFixed(2) : json.USD.toPrecision(2)
+        }
+        if (this.sel && this.sel.name === currentTicker.name) {
+          this.graphData.push(json.USD)
+        }
+      }, 3000)
     },
-    removeTicker(tickerToRemove: Record<string, unknown>) {
-      this.tickers = this.tickers.filter((ticker) => ticker !== tickerToRemove);
+    removeTicker(tickerToRemove: Ticker) {
+      this.tickers = this.tickers.filter((ticker) => ticker !== tickerToRemove)
+    },
+    normalizeGraph() {
+      const maxValue = Math.max(...this.graphData)
+      const minValue = Math.min(...this.graphData)
+      return this.graphData.map(
+        (price) => 5 + ((price - minValue) * 95) / (maxValue - minValue)
+      )
+    },
+    selectTicker(ticker: Ticker) {
+      this.sel = ticker
+      this.graphData = []
     },
   },
-});
+})
 </script>
 
 <style src="./app.css"></style>
