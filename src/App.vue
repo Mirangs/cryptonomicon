@@ -214,5 +214,3 @@ export default defineComponent({
   },
 })
 </script>
-
-<style src="./app.css"></style>
