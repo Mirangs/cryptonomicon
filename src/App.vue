@@ -68,14 +68,34 @@
       </section>
 
       <template v-if="tickers.length">
+        <section class="pagination">
+          <button
+            class="my-4 mx-2 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+            v-if="page > 1"
+            @click="page = page - 1"
+          >
+            Prev
+          </button>
+          <button
+            class="my-4 mx-2 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+            v-if="hasNextPage"
+            @click="page = page + 1"
+          >
+            Next
+          </button>
+        </section>
+        <section>
+          Filters:
+          <input v-model="filter" />
+        </section>
         <hr class="w-full border-t border-gray-600 my-4" />
         <dl class="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-3">
           <div
-            v-for="t in tickers"
+            v-for="t in paginatedTickers"
             :key="t.name"
             @click="selectTicker(t)"
             :class="{
-              'border-4': sel === t,
+              'border-4': selectedTicker === t,
             }"
             class="bg-white overflow-hidden shadow rounded-lg border-purple-800 border-solid cursor-pointer"
           >
@@ -110,14 +130,14 @@
         </dl>
         <hr class="w-full border-t border-gray-600 my-4" />
       </template>
-      <section class="relative" v-if="sel">
+      <section class="relative" v-if="selectedTicker">
         <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">
-          {{ sel.name }} - USD
+          {{ selectedTicker.name }} - USD
         </h3>
         <div class="flex items-end border-gray-600 border-b border-l h-64">
           <div
             class="bg-purple-800 border w-10"
-            v-for="(bar, index) in normalizeGraph()"
+            v-for="(bar, index) in normalizedGraph"
             :key="index"
             :style="{ height: `${bar}%` }"
           ></div>
@@ -125,7 +145,7 @@
         <button
           type="button"
           class="absolute top-0 right-0"
-          @click="sel = null"
+          @click="selectedTicker = null"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -160,15 +180,28 @@ import { Ticker, Tickers } from '@/types'
 
 export default defineComponent({
   name: 'App',
+
   data() {
     return {
       ticker: '',
+      filter: '',
+
       tickers: [] as Tickers,
-      sel: null as Ticker | null,
+      selectedTicker: null as Ticker | null,
+
       graphData: [] as number[],
+
+      page: 1,
     }
   },
+
   created() {
+    const { page = 1, filter = '' } = Object.fromEntries(
+      new URL(window.location.toString()).searchParams.entries()
+    )
+    this.page = +page || 1
+    this.filter = filter
+
     const tickersData = localStorage.getItem('cryptonomicon-list')
     if (tickersData) {
       this.tickers = JSON.parse(tickersData)
@@ -177,11 +210,46 @@ export default defineComponent({
       })
     }
   },
+
+  computed: {
+    startIndex(): number {
+      return (this.page - 1) * 6
+    },
+    endIndex(): number {
+      return this.page * 6
+    },
+    filteredTickers(): Tickers {
+      return this.tickers.filter((ticker) => ticker.name.includes(this.filter))
+    },
+    paginatedTickers(): Tickers {
+      return this.filteredTickers.slice(this.startIndex, this.endIndex)
+    },
+    hasNextPage(): boolean {
+      return this.filteredTickers.length > this.endIndex
+    },
+    normalizedGraph(): number[] {
+      const maxValue = Math.max(...this.graphData)
+      const minValue = Math.min(...this.graphData)
+
+      if (maxValue === minValue) {
+        return this.graphData.map(() => 50)
+      }
+
+      return this.graphData.map(
+        (price) => 5 + ((price - minValue) * 95) / (maxValue - minValue)
+      )
+    },
+    pageStateOptions(): { filter: string; page: number } {
+      return {
+        filter: this.filter,
+        page: this.page,
+      }
+    },
+  },
+
   methods: {
     subscribeToUpdates(tickerName: string) {
       setInterval(async () => {
-        console.log(process.env)
-
         const res = await fetch(
           `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=${process.env.VUE_APP_CRYPTOCOMPARE_API_KEY}`
         )
@@ -191,7 +259,7 @@ export default defineComponent({
           tickerToFind.price =
             json.USD > 1 ? json.USD.toFixed(2) : json.USD.toPrecision(2)
         }
-        if (this.sel && this.sel.name === tickerName) {
+        if (this.selectedTicker && this.selectedTicker.name === tickerName) {
           this.graphData.push(json.USD)
         }
       }, 3000)
@@ -201,24 +269,44 @@ export default defineComponent({
         name: this.ticker,
         price: '-',
       }
-      this.tickers.push(currentTicker)
+      this.tickers = [...this.tickers, currentTicker]
       this.ticker = ''
-      localStorage.setItem('cryptonomicon-list', JSON.stringify(this.tickers))
+      this.filter = ''
       this.subscribeToUpdates(currentTicker.name)
     },
     removeTicker(tickerToRemove: Ticker) {
       this.tickers = this.tickers.filter((ticker) => ticker !== tickerToRemove)
-    },
-    normalizeGraph() {
-      const maxValue = Math.max(...this.graphData)
-      const minValue = Math.min(...this.graphData)
-      return this.graphData.map(
-        (price) => 5 + ((price - minValue) * 95) / (maxValue - minValue)
-      )
+      if (this.selectedTicker === tickerToRemove) {
+        this.selectedTicker = null
+      }
     },
     selectTicker(ticker: Ticker) {
-      this.sel = ticker
+      this.selectedTicker = ticker
+    },
+  },
+
+  watch: {
+    selectedTicker() {
       this.graphData = []
+    },
+    tickers() {
+      localStorage.setItem('cryptonomicon-list', JSON.stringify(this.tickers))
+    },
+    paginatedTickers() {
+      if (!this.paginatedTickers.length && this.page > 1) {
+        this.page -= 1
+      }
+    },
+    filter() {
+      this.page = 1
+    },
+    pageStateOptions(value) {
+      const filter = value.filter ? `&filter=${value.filter}` : ''
+      history.pushState(
+        null,
+        document.title,
+        `${window.location.pathname}?page=${value.page}${filter}`
+      )
     },
   },
 })
