@@ -168,7 +168,34 @@ export default defineComponent({
       graphData: [] as number[],
     }
   },
+  created() {
+    const tickersData = localStorage.getItem('cryptonomicon-list')
+    if (tickersData) {
+      this.tickers = JSON.parse(tickersData)
+      this.tickers.forEach((ticker) => {
+        this.subscribeToUpdates(ticker.name)
+      })
+    }
+  },
   methods: {
+    subscribeToUpdates(tickerName: string) {
+      setInterval(async () => {
+        console.log(process.env)
+
+        const res = await fetch(
+          `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=${process.env.VUE_APP_CRYPTOCOMPARE_API_KEY}`
+        )
+        const json = (await res.json()) as { USD: number }
+        const tickerToFind = this.tickers.find((t) => t.name === tickerName)
+        if (tickerToFind) {
+          tickerToFind.price =
+            json.USD > 1 ? json.USD.toFixed(2) : json.USD.toPrecision(2)
+        }
+        if (this.sel && this.sel.name === tickerName) {
+          this.graphData.push(json.USD)
+        }
+      }, 3000)
+    },
     addTicker() {
       const currentTicker: Ticker = {
         name: this.ticker,
@@ -176,26 +203,8 @@ export default defineComponent({
       }
       this.tickers.push(currentTicker)
       this.ticker = ''
-      console.log(process.env)
-
-      setInterval(async () => {
-        console.log(process.env)
-
-        const res = await fetch(
-          `https://min-api.cryptocompare.com/data/price?fsym=${currentTicker.name}&tsyms=USD&api_key=${process.env.VUE_APP_CRYPTOCOMPARE_API_KEY}`
-        )
-        const json = (await res.json()) as { USD: number }
-        const tickerToFind = this.tickers.find(
-          (t) => t.name === currentTicker.name
-        )
-        if (tickerToFind) {
-          tickerToFind.price =
-            json.USD > 1 ? json.USD.toFixed(2) : json.USD.toPrecision(2)
-        }
-        if (this.sel && this.sel.name === currentTicker.name) {
-          this.graphData.push(json.USD)
-        }
-      }, 3000)
+      localStorage.setItem('cryptonomicon-list', JSON.stringify(this.tickers))
+      this.subscribeToUpdates(currentTicker.name)
     },
     removeTicker(tickerToRemove: Ticker) {
       this.tickers = this.tickers.filter((ticker) => ticker !== tickerToRemove)
