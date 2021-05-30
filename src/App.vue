@@ -177,7 +177,7 @@
 <script lang="ts">
 import { defineComponent } from 'vue'
 import { Ticker, Tickers } from '@/types'
-import { loadTickers, subscribeToTicker, unsubscribeFromTicker } from '@/api'
+import { subscribeToTicker, unsubscribeFromTicker } from '@/api'
 
 export default defineComponent({
   name: 'App',
@@ -212,8 +212,6 @@ export default defineComponent({
         )
       })
     }
-
-    setInterval(this.updateTickers, 3000)
   },
 
   computed: {
@@ -257,6 +255,9 @@ export default defineComponent({
       this.tickers
         .filter((t) => t.name === tickerName)
         .forEach((t) => {
+          if (t === this.selectedTicker) {
+            this.graphData.push(price)
+          }
           t.price = price
         })
     },
@@ -265,12 +266,6 @@ export default defineComponent({
         return price > 1 ? price.toFixed(2) : price.toPrecision(2)
       }
       return price
-    },
-    async updateTickers() {
-      if (!this.tickers.length) {
-        return
-      }
-      await loadTickers(this.tickers.map(({ name }) => name))
     },
     addTicker() {
       const currentTicker: Ticker = {
