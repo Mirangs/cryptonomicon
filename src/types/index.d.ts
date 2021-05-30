@@ -1,6 +1,6 @@
 export interface Ticker {
   name: string
-  price: string
+  price: number | string
 }
 
 export type Tickers = Ticker[]

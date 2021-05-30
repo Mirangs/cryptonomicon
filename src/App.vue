@@ -104,7 +104,7 @@
                 {{ t.name }} - USD
               </dt>
               <dd class="mt-1 text-3xl font-semibold text-gray-900">
-                {{ t.price }}
+                {{ formatPrice(t.price) }}
               </dd>
             </div>
             <div class="w-full border-t border-gray-200"></div>
@@ -177,6 +177,7 @@
 <script lang="ts">
 import { defineComponent } from 'vue'
 import { Ticker, Tickers } from '@/types'
+import { loadTickers, subscribeToTicker, unsubscribeFromTicker } from '@/api'
 
 export default defineComponent({
   name: 'App',
@@ -206,9 +207,13 @@ export default defineComponent({
     if (tickersData) {
       this.tickers = JSON.parse(tickersData)
       this.tickers.forEach((ticker) => {
-        this.subscribeToUpdates(ticker.name)
+        subscribeToTicker(ticker.name, (newPrice) =>
+          this.updateTicker(ticker.name, newPrice)
+        )
       })
     }
+
+    setInterval(this.updateTickers, 3000)
   },
 
   computed: {
@@ -248,21 +253,24 @@ export default defineComponent({
   },
 
   methods: {
-    subscribeToUpdates(tickerName: string) {
-      setInterval(async () => {
-        const res = await fetch(
-          `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=${process.env.VUE_APP_CRYPTOCOMPARE_API_KEY}`
-        )
-        const json = (await res.json()) as { USD: number }
-        const tickerToFind = this.tickers.find((t) => t.name === tickerName)
-        if (tickerToFind) {
-          tickerToFind.price =
-            json.USD > 1 ? json.USD.toFixed(2) : json.USD.toPrecision(2)
-        }
-        if (this.selectedTicker && this.selectedTicker.name === tickerName) {
-          this.graphData.push(json.USD)
-        }
-      }, 3000)
+    updateTicker(tickerName: string, price: number) {
+      this.tickers
+        .filter((t) => t.name === tickerName)
+        .forEach((t) => {
+          t.price = price
+        })
+    },
+    formatPrice(price: number | string) {
+      if (price !== '-' && typeof price === 'number') {
+        return price > 1 ? price.toFixed(2) : price.toPrecision(2)
+      }
+      return price
+    },
+    async updateTickers() {
+      if (!this.tickers.length) {
+        return
+      }
+      await loadTickers(this.tickers.map(({ name }) => name))
     },
     addTicker() {
       const currentTicker: Ticker = {
@@ -270,15 +278,19 @@ export default defineComponent({
         price: '-',
       }
       this.tickers = [...this.tickers, currentTicker]
+      subscribeToTicker(currentTicker.name, (newPrice) =>
+        this.updateTicker(currentTicker.name, newPrice)
+      )
+
       this.ticker = ''
       this.filter = ''
-      this.subscribeToUpdates(currentTicker.name)
     },
     removeTicker(tickerToRemove: Ticker) {
       this.tickers = this.tickers.filter((ticker) => ticker !== tickerToRemove)
       if (this.selectedTicker === tickerToRemove) {
         this.selectedTicker = null
       }
+      unsubscribeFromTicker(tickerToRemove.name)
     },
     selectTicker(ticker: Ticker) {
       this.selectedTicker = ticker
